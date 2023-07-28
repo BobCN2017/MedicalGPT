@@ -1,8 +1,9 @@
-CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node 2 supervised_finetuning.py \
+deepspeed --master_port 29500 --num_gpus=8 \
+supervised_finetuning.py \
     --model_type bloom \
     --model_name_or_path bigscience/bloomz-560m \
-    --train_file_dir ./data/finetune \
-    --validation_file_dir ./data/finetune \
+    --train_file_dir ./data/finetune/data \
+    --validation_file_dir ./data/finetune/valid \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \
     --do_train \
@@ -11,7 +12,7 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node 2 supervised_finetuning.py \
     --fp16 \
     --max_train_samples 1000 \
     --max_eval_samples 10 \
-    --num_train_epochs 1 \
+    --num_train_epochs 0.01 \
     --learning_rate 2e-5 \
     --warmup_ratio 0.05 \
     --weight_decay 0.05 \
@@ -38,4 +39,5 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --nproc_per_node 2 supervised_finetuning.py \
     --device_map auto \
     --report_to tensorboard \
     --ddp_find_unused_parameters False \
-    --gradient_checkpointing True
+    --gradient_checkpointing True \
+    --deepspeed deepspeed_config.json
