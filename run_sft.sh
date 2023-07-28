@@ -10,7 +10,6 @@ supervised_finetuning.py \
     --do_eval \
     --use_peft True \
     --fp16 \
-    --max_train_samples 1000 \
     --max_eval_samples 10 \
     --num_train_epochs 0.01 \
     --learning_rate 2e-5 \
