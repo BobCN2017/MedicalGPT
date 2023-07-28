@@ -288,7 +288,6 @@ def main():
             load_in_8bit=model_args.load_in_8bit,
             cache_dir=model_args.cache_dir,
             torch_dtype=torch_dtype,
-            device_map=model_args.device_map,
             trust_remote_code=model_args.trust_remote_code,
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=True,
