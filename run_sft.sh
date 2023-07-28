@@ -1,7 +1,7 @@
 deepspeed --master_port 29500 --num_gpus=8 \
 supervised_finetuning.py \
-    --model_type bloom \
-    --model_name_or_path bigscience/bloomz-560m \
+    --model_type chatglm \
+    --model_name_or_path THUDM/chatglm-6b \
     --train_file_dir ./data/finetune/data \
     --validation_file_dir ./data/finetune/valid \
     --per_device_train_batch_size 4 \
