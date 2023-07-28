@@ -17,9 +17,9 @@ supervised_finetuning.py \
     --weight_decay 0.05 \
     --logging_strategy steps \
     --logging_steps 10 \
-    --eval_steps 50 \
+    --eval_steps 1000 \
     --evaluation_strategy steps \
-    --save_steps 500 \
+    --save_steps 1000 \
     --save_strategy steps \
     --save_total_limit 3 \
     --gradient_accumulation_steps 1 \
