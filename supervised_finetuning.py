@@ -296,6 +296,7 @@ def main():
                 bnb_4bit_quant_type="nf4",
                 bnb_4bit_compute_dtype=torch_dtype,
             ) if training_args.qlora else None,
+            low_cpu_mem_usage=False,
         )
         if hasattr(model, 'lm_head'):
             model.lm_head = CastOutputToFloat(model.lm_head)
