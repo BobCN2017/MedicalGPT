@@ -1,4 +1,4 @@
-deepspeed --master_port 29500 --num_gpus=1 \
+deepspeed --master_port 29500 -i localhost:7 \
 supervised_finetuning.py \
     --model_type chatglm \
     --model_name_or_path THUDM/chatglm-6b \

@@ -55,9 +55,8 @@ MODEL_CLASSES = {
 
 IGNORE_INDEX = -100
 PROMPT_TEMPLATE = (
-    "Below is an instruction that describes a task. "
-    "Write a response that appropriately completes the request.\n\n"
-    "### Instruction:\n{instruction}\n\n### Response: "
+    "招行相关问答.\n\n"
+    "### 问:\n{instruction}\n\n### 答: "
 )
 
 
