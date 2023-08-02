@@ -10,8 +10,8 @@ from datasets import load_dataset
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--in_file", type=str)
-    parser.add_argument("--out_file", type=str)
+    parser.add_argument("--in_file", type=str,default='data/finetune/valid/test.json')
+    parser.add_argument("--out_file", type=str,default='data/finetune/valid/test.jsonl')
     parser.add_argument("--data_type", type=str, default='alpaca')
     args = parser.parse_args()
     print(args)
