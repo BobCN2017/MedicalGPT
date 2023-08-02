@@ -24,8 +24,7 @@ supervised_finetuning.py \
     --save_total_limit 3 \
     --gradient_accumulation_steps 1 \
     --preprocessing_num_workers 1 \
-    --max_source_length 256 \
-    --max_target_length 256 \
+    --model_max_length 534 \
     --output_dir outputs-sft-v1 \
     --overwrite_output_dir \
     --ddp_timeout 30000 \

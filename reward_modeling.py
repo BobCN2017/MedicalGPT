@@ -17,6 +17,7 @@ from peft import LoraConfig, TaskType, get_peft_model, PeftModel, prepare_model_
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from torch.utils.data import Dataset
 from transformers import (
+    AutoConfig,
     PreTrainedTokenizerBase,
     BloomForSequenceClassification,
     LlamaForSequenceClassification,
@@ -35,16 +36,14 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer import TRAINING_ARGS_NAME
-from transformers.utils import send_example_telemetry
 
 MODEL_CLASSES = {
-    "bert": (BertForSequenceClassification, BertTokenizer),
-    "roberta": (RobertaForSequenceClassification, RobertaTokenizer),
-    "albert": (AlbertForSequenceClassification, AutoTokenizer),
-    "bloom": (BloomForSequenceClassification, BloomTokenizerFast),
-    "llama": (LlamaForSequenceClassification, LlamaTokenizer),
-    "baichuan": (LlamaForSequenceClassification, AutoTokenizer),
-    "auto": (AutoModelForSequenceClassification, AutoTokenizer),
+    "bert": (AutoConfig, BertForSequenceClassification, BertTokenizer),
+    "roberta": (AutoConfig, RobertaForSequenceClassification, RobertaTokenizer),
+    "albert": (AutoConfig, AlbertForSequenceClassification, AutoTokenizer),
+    "bloom": (AutoConfig, BloomForSequenceClassification, BloomTokenizerFast),
+    "llama": (AutoConfig, LlamaForSequenceClassification, LlamaTokenizer),
+    "auto": (AutoConfig, AutoModelForSequenceClassification, AutoTokenizer),
 }
 
 
@@ -148,8 +147,8 @@ class DataTrainingArguments:
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
-    validation_split_percentage: Optional[float] = field(
-        default=0.05,
+    validation_split_percentage: Optional[int] = field(
+        default=1,
         metadata={
             "help": "The percentage of the train set used as validation set in case there's no validation split"
         },
@@ -365,7 +364,7 @@ def main():
     # Load model
     if not model_args.model_type:
         raise ValueError("Please specify a model_type, e.g. llama, chatglm, bloom, etc.")
-    model_class, tokenizer_class = MODEL_CLASSES[model_args.model_type]
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[model_args.model_type]
     if model_args.model_name_or_path:
         torch_dtype = (
             model_args.torch_dtype
@@ -375,13 +374,18 @@ def main():
         world_size = int(os.environ.get("WORLD_SIZE", 1))
         if world_size > 1:
             model_args.device_map = {"": int(os.environ["LOCAL_RANK"]) or 0}
+        config = config_class.from_pretrained(
+            model_args.model_name_or_path,
+            num_labels=1,
+            torch_dtype=torch_dtype,
+            trust_remote_code=model_args.trust_remote_code,
+            cache_dir=model_args.cache_dir
+        )
         if model_args.model_type in ['bloom', 'llama']:
             model = model_class.from_pretrained(
                 model_args.model_name_or_path,
-                num_labels=1,
+                config=config,
                 load_in_8bit=model_args.load_in_8bit,
-                cache_dir=model_args.cache_dir,
-                torch_dtype=torch_dtype,
                 device_map=model_args.device_map,
                 trust_remote_code=model_args.trust_remote_code,
             )
@@ -389,9 +393,8 @@ def main():
         else:
             model = model_class.from_pretrained(
                 model_args.model_name_or_path,
-                num_labels=1,
+                config=config,
                 cache_dir=model_args.cache_dir,
-                torch_dtype=torch_dtype,
                 ignore_mismatched_sizes=True
             )
             model.to(training_args.device)
@@ -410,8 +413,7 @@ def main():
     if not tokenizer_name_or_path:
         tokenizer_name_or_path = model_args.model_name_or_path
     tokenizer = tokenizer_class.from_pretrained(tokenizer_name_or_path, **tokenizer_kwargs)
-    # Required for llama
-    if model_args.model_type == "llama":
+    if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = 0
 
     if training_args.use_peft:

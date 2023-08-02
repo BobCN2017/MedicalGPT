@@ -15,6 +15,7 @@ from loguru import logger
 from peft import LoraConfig, TaskType
 from tqdm import tqdm
 from transformers import (
+    AutoConfig,
     AutoModelForSequenceClassification,
     BloomForCausalLM,
     AutoModelForCausalLM,
@@ -31,11 +32,11 @@ os.environ["TOKENIZERS_PARALLELISM"] = "FALSE"
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 MODEL_CLASSES = {
-    "bloom": (BloomForCausalLM, BloomTokenizerFast),
-    "chatglm": (AutoModel, AutoTokenizer),
-    "llama": (LlamaForCausalLM, LlamaTokenizer),
-    "baichuan": (AutoModelForCausalLM, AutoTokenizer),
-    "auto": (AutoModelForCausalLM, AutoTokenizer),
+    "bloom": (AutoConfig, BloomForCausalLM, BloomTokenizerFast),
+    "chatglm": (AutoConfig, AutoModel, AutoTokenizer),
+    "llama": (AutoConfig, LlamaForCausalLM, LlamaTokenizer),
+    "baichuan": (AutoConfig, AutoModelForCausalLM, AutoTokenizer),
+    "auto": (AutoConfig, AutoModelForCausalLM, AutoTokenizer),
 }
 
 PROMPT_TEMPLATE = (
@@ -124,8 +125,8 @@ class ScriptArguments:
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
-    validation_split_percentage: Optional[float] = field(
-        default=0.05,
+    validation_split_percentage: Optional[int] = field(
+        default=1,
         metadata={
             "help": "The percentage of the train set used as validation set in case there's no validation split"
         },
@@ -203,7 +204,7 @@ def main():
 
     logger.warning(f"Parse args: {args}")
 
-    model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
     if args.model_type == 'bloom':
         args.use_fast_tokenizer = True
     # Load tokenizer
@@ -237,11 +238,16 @@ def main():
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     if world_size > 1:
         args.device_map = {"": int(os.environ["LOCAL_RANK"]) or 0}
+    config = config_class.from_pretrained(
+        args.model_name_or_path,
+        torch_dtype=torch_dtype,
+        trust_remote_code=args.trust_remote_code,
+        cache_dir=args.cache_dir
+    )
     model = AutoModelForCausalLMWithValueHead.from_pretrained(
         args.model_name_or_path,
+        config=config,
         load_in_8bit=args.load_in_8bit,
-        cache_dir=args.cache_dir,
-        torch_dtype=torch_dtype,
         device_map=args.device_map,
         trust_remote_code=args.trust_remote_code,
         peft_config=peft_config if args.use_peft else None,
@@ -251,9 +257,9 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     reward_model = AutoModelForSequenceClassification.from_pretrained(
         args.reward_model_name_or_path,
+        config=config,
         load_in_8bit=args.load_in_8bit,
-        cache_dir=args.cache_dir,
-        torch_dtype=torch_dtype,
+        trust_remote_code=args.trust_remote_code,
     )
     reward_model.to(device)
     reward_tokenizer = AutoTokenizer.from_pretrained(
@@ -399,9 +405,6 @@ def main():
         "repetition_penalty": 1.0,
         "top_p": 1.0,
         "do_sample": True,
-        "pad_token_id": tokenizer.pad_token_id,
-        "eos_token_id": tokenizer.eos_token_id,
-        "bos_token_id": tokenizer.bos_token_id,
     }
 
     def save_model(save_dir):

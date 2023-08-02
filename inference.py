@@ -6,6 +6,7 @@
 import argparse
 import json
 import os
+from threading import Thread
 
 import torch
 from peft import PeftModel
@@ -17,14 +18,75 @@ from transformers import (
     BloomTokenizerFast,
     LlamaTokenizer,
     LlamaForCausalLM,
+    TextIteratorStreamer,
 )
+
+from supervised_finetuning import get_conv_template
 
 MODEL_CLASSES = {
     "bloom": (BloomForCausalLM, BloomTokenizerFast),
     "chatglm": (AutoModel, AutoTokenizer),
     "llama": (LlamaForCausalLM, LlamaTokenizer),
+    "baichuan": (AutoModelForCausalLM, AutoTokenizer),
     "auto": (AutoModelForCausalLM, AutoTokenizer),
 }
+
+
+class SimpleChatIO:
+    def prompt_for_input(self, role) -> str:
+        return input(f"{role}: ")
+
+    def prompt_for_output(self, role: str):
+        print(f"{role}: ", end="", flush=True)
+
+
+@torch.inference_mode()
+def generate_answer(
+        model,
+        tokenizer,
+        prompt,
+        device,
+        streamer,
+        do_print=True,
+        max_new_tokens=512,
+        temperature=0.7,
+        top_k=40,
+        top_p=0.9,
+        do_sample=True,
+        repetition_penalty=1.0,
+        context_len=2048
+):
+    input_ids = tokenizer(prompt).input_ids
+    max_src_len = context_len - max_new_tokens - 8
+    input_ids = input_ids[-max_src_len:]
+    generation_kwargs = dict(
+        input_ids=torch.as_tensor([input_ids]).to(device),
+        max_new_tokens=max_new_tokens,
+        temperature=temperature,
+        top_k=top_k,
+        top_p=top_p,
+        do_sample=do_sample,
+        repetition_penalty=repetition_penalty,
+        streamer=streamer,
+    )
+    thread = Thread(target=model.generate, kwargs=generation_kwargs)
+    thread.start()
+    stop_str = tokenizer.eos_token or "</s>"
+    generated_text = ""
+    for new_text in streamer:
+        stop = False
+        pos = new_text.find(stop_str)
+        if pos != -1:
+            new_text = new_text[:pos]
+            stop = True
+        generated_text += new_text
+        if do_print:
+            print(new_text, end="", flush=True)
+        if stop:
+            break
+    if do_print:
+        print("", flush=True)
+    return generated_text
 
 
 def main():
@@ -33,45 +95,22 @@ def main():
     parser.add_argument('--base_model', default=None, type=str, required=True)
     parser.add_argument('--lora_model', default="", type=str, help="If None, perform inference on the base model")
     parser.add_argument('--tokenizer_path', default=None, type=str)
+    parser.add_argument('--template_name', default="alpaca", type=str, help="Prompt template name")
+    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--repetition_penalty", type=float, default=1.0)
+    parser.add_argument("--max_new_tokens", type=int, default=512)
     parser.add_argument('--data_file', default=None, type=str,
                         help="A file that contains instructions (one instruction per line)")
-    parser.add_argument('--with_prompt', action='store_true', help="wrap the input with the prompt automatically")
     parser.add_argument('--interactive', action='store_true', help="run in the instruction mode (single-turn)")
     parser.add_argument('--predictions_file', default='./predictions.json', type=str)
+    parser.add_argument('--resize_emb', action='store_true', help='Whether to resize model token embeddings')
     parser.add_argument('--gpus', default="0", type=str)
     parser.add_argument('--only_cpu', action='store_true', help='only use CPU for inference')
-    parser.add_argument('--resize_emb', action='store_true', help='Whether to resize model token embeddings')
     args = parser.parse_args()
+    print(args)
     if args.only_cpu is True:
         args.gpus = ""
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
-
-    generation_config = dict(
-        temperature=0.2,
-        top_k=40,
-        top_p=0.9,
-        do_sample=True,
-        num_beams=1,
-        repetition_penalty=1.3,
-        max_new_tokens=400
-    )
-
-    # The prompt template below is taken from llama.cpp
-    # and is slightly different from the one used in training.
-    # But we find it gives better results
-    prompt_input = (
-        "Below is an instruction that describes a task. "
-        "Write a response that appropriately completes the request.\n\n"
-        "### Instruction:\n\n{instruction}\n\n### Response:\n\n"
-    )
-
-    sample_data = ["乙肝和丙肝的区别？"]
-
-    def generate_prompt(instruction, input=None):
-        if input:
-            instruction = instruction + '\n' + input
-        return prompt_input.format_map({'instruction': instruction})
-
     load_type = torch.float16
     if torch.cuda.is_available():
         device = torch.device(0)
@@ -105,89 +144,99 @@ def main():
         print("Loaded lora model")
     else:
         model = base_model
-
     if device == torch.device('cpu'):
         model.float()
+    model.eval()
+    print(tokenizer)
     # test data
     if args.data_file is None:
-        examples = sample_data
+        examples = ["介绍下北京", "乙肝和丙肝的区别？"]
     else:
         with open(args.data_file, 'r') as f:
             examples = [l.strip() for l in f.readlines()]
         print("first 10 examples:")
         for example in examples[:10]:
             print(example)
-    model.eval()
 
-    with torch.no_grad():
-        if args.interactive:
-            print("Start inference with instruction mode.")
+    chatio = SimpleChatIO()
+    streamer = TextIteratorStreamer(
+        tokenizer,
+        skip_prompt=True,
+        skip_special_tokens=False
+    )
 
-            print('=' * 85)
-            print("+ 该模式下仅支持单轮问答，无多轮对话能力。\n"
-                  "+ 如要进行多轮对话，请使用llama.cpp或llamachat工具。")
-            print('-' * 85)
-            print("+ This mode only supports single-turn QA.\n"
-                  "+ If you want to experience multi-turn dialogue, please use llama.cpp or llamachat.")
-            print('=' * 85)
+    # Chat
+    def new_chat():
+        return get_conv_template(args.template_name)
 
-            while True:
-                raw_input_text = input("Input:")
-                if len(raw_input_text.strip()) == 0:
-                    break
-                if args.with_prompt:
-                    input_text = generate_prompt(instruction=raw_input_text)
-                else:
-                    input_text = raw_input_text
-                inputs = tokenizer(input_text, return_tensors="pt")
-                generation_output = model.generate(
-                    input_ids=inputs["input_ids"].to(device),
-                    bos_token_id=tokenizer.bos_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
-                    pad_token_id=tokenizer.pad_token_id,
-                    **generation_config
-                )
-                s = generation_output[0]
-                output = tokenizer.decode(s, skip_special_tokens=True)
-                if args.with_prompt:
-                    response = output.split("### Response:")[1].strip()
-                else:
-                    response = output
-                print("Response: ", response)
-                print("\n")
-        else:
-            print("Start inference.")
-            results = []
-            for index, example in enumerate(examples):
-                if args.with_prompt is True:
-                    input_text = generate_prompt(instruction=example)
-                else:
-                    input_text = example
-                inputs = tokenizer(input_text, return_tensors="pt")
-                generation_output = model.generate(
-                    input_ids=inputs["input_ids"].to(device),
-                    eos_token_id=tokenizer.eos_token_id,
-                    pad_token_id=tokenizer.pad_token_id,
-                    **generation_config
-                )
-                s = generation_output[0]
-                output = tokenizer.decode(s, skip_special_tokens=True)
-                if args.with_prompt:
-                    response = output.split("### Response:")[1].strip()
-                else:
-                    response = output
-                print(f"======={index}=======")
-                print(f"Input: {example}\n")
-                print(f"Output: {response}\n")
+    if args.interactive:
+        print("Start inference with interactive mode.")
+        conv = new_chat()
+        while True:
+            try:
+                inp = chatio.prompt_for_input(conv.roles[0])
+            except EOFError:
+                inp = ""
+            except UnicodeDecodeError:
+                print("UnicodeDecodeError, please try again.")
+                continue
+            if inp == "!!exit" or not inp:
+                print("exit...")
+                break
+            if inp == "!!reset":
+                print("resetting...")
+                conv = new_chat()
+                continue
 
-                results.append({"Input": input_text, "Output": response})
+            conv.append_message(conv.roles[0], inp)
+            conv.append_message(conv.roles[1], '')
 
-            dirname = os.path.dirname(args.predictions_file)
-            os.makedirs(dirname, exist_ok=True)
-            with open(args.predictions_file, 'w') as f:
-                json.dump(results, f, ensure_ascii=False, indent=2)
-            with open(dirname + '/generation_config.json', 'w') as f:
-                json.dump(generation_config, f, ensure_ascii=False, indent=2)
+            prompt = conv.get_prompt()
+            chatio.prompt_for_output(conv.roles[1])
+            response = generate_answer(
+                model,
+                tokenizer,
+                prompt,
+                device,
+                streamer,
+                do_print=True,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+                repetition_penalty=args.repetition_penalty
+            )
+            # NOTE: strip is important to align with the training data.
+            conv.messages[-1][-1] = response.strip()
+            # print("\n", {"prompt": prompt, "outputs": outputs}, "\n")
+    else:
+        print("Start inference.")
+        results = []
+        for index, example in enumerate(examples):
+            conv = new_chat()
+            conv.append_message(conv.roles[0], example)
+            conv.append_message(conv.roles[1], '')
+
+            prompt = conv.get_prompt()
+            response = generate_answer(
+                model,
+                tokenizer,
+                prompt,
+                device,
+                streamer,
+                do_print=False,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+                repetition_penalty=args.repetition_penalty
+            )
+            response = response.strip()
+            print(f"======={index}=======")
+            print(f"Input: {example}\n")
+            print(f"Output: {response}\n")
+            results.append({"Input": prompt, "Output": response})
+
+        dirname = os.path.dirname(args.predictions_file)
+        os.makedirs(dirname, exist_ok=True)
+        with open(args.predictions_file, 'w', encoding='utf-8') as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == '__main__':
