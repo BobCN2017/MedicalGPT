@@ -1,7 +1,7 @@
-deepspeed --master_port 29500 -i localhost:7 \
+deepspeed --master_port 29500 -i localhost:0 \
 supervised_finetuning.py \
     --model_type chatglm \
-    --model_name_or_path THUDM/chatglm-6b \
+    --model_name_or_path THUDM/chatglm2-6b \
     --train_file_dir ./data/finetune/data \
     --validation_file_dir ./data/finetune/valid \
     --per_device_train_batch_size 1 \
@@ -37,5 +37,4 @@ supervised_finetuning.py \
     --device_map auto \
     --report_to tensorboard \
     --ddp_find_unused_parameters False \
-    --gradient_checkpointing True \
     --deepspeed deepspeed_config.json
