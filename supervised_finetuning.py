@@ -737,6 +737,7 @@ def main():
         for conversation, target in zip(conversations, targets):
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
             turns = conversation.split(conv.sep2)
+            logger.info(f"conversation len:{len(conversation)}, turns[0] len:{len(turns[0])}")
             cur_len = 0
             for i, turn in enumerate(turns):
                 if turn == "":
