@@ -248,7 +248,7 @@ class Conversation:
                     ret += role + ": " + message + seps[i % 2]
                 else:
                     ret += role + ":"
-            return ret
+            return ret.rstrip(self.sep2)
         elif self.sep_style == SeparatorStyle.NO_COLON_SINGLE:
             ret = self.system
             for role, message in self.messages:
@@ -736,8 +736,7 @@ def main():
         for conversation, target in zip(conversations, targets):
             total_len = int(target.ne(tokenizer.pad_token_id).sum())
             turns = conversation.split(conv.sep2)
-            logger.info(f"conversation :{conversation}, turns[0] :{turns[0]}")
-            logger.info(f"conversation len:{len(conversation)}, turns[0] len:{len(turns[0])}")
+            # logger.info(f"conversation len:{len(conversation)}, turns[0] len:{len(turns[0])}")
             cur_len = 0
             for i, turn in enumerate(turns):
                 if turn == "":
@@ -751,7 +750,7 @@ def main():
                 # Ignore the user instructions
                 target[cur_len: cur_len + instruction_len] = IGNORE_INDEX
                 cur_len += turn_len
-                logger.info(f"cur_len:{cur_len},turn_len:{turn_len},total_len:{total_len}")
+                # logger.info(f"cur_len:{cur_len},turn_len:{turn_len},total_len:{total_len}")
             target[cur_len:] = IGNORE_INDEX
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
@@ -777,7 +776,7 @@ def main():
         if data_args.max_train_samples is not None and data_args.max_train_samples > 0:
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
             train_dataset = train_dataset.select(range(max_train_samples))
-        logger.debug(f"Example train_dataset[0]: {train_dataset[0]}")
+        # logger.debug(f"Example train_dataset[0]: {train_dataset[0]}")
         with training_args.main_process_first(desc="Train dataset tokenization"):
             train_dataset = train_dataset.shuffle().map(
                 preprocess_function,
@@ -787,9 +786,9 @@ def main():
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on dataset",
             )
-            logger.debug(f"Num train_samples: {len(train_dataset)}")
+            # logger.debug(f"Num train_samples: {len(train_dataset)}")
             train_dataset = train_dataset.filter(filter_empty_labels, num_proc=data_args.preprocessing_num_workers)
-            logger.debug(f"Num train_samples: {len(train_dataset)}")
+            # logger.debug(f"Num train_samples: {len(train_dataset)}")
             logger.debug("Tokenized training example:")
             logger.debug(tokenizer.decode(train_dataset[0]['input_ids']))
 
@@ -801,11 +800,11 @@ def main():
                 raise ValueError("--do_eval requires a validation dataset")
             eval_dataset = raw_datasets["validation"]
             max_eval_samples = len(eval_dataset)
-            logger.debug(f"Num eval_samples: {len(eval_dataset)}")
+            # logger.debug(f"Num eval_samples: {len(eval_dataset)}")
             if data_args.max_eval_samples is not None and data_args.max_eval_samples > 0:
                 max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
                 eval_dataset = eval_dataset.select(range(max_eval_samples))
-            logger.debug(f"Example eval_dataset[0]: {eval_dataset[0]}")
+            # logger.debug(f"Example eval_dataset[0]: {eval_dataset[0]}")
             eval_dataset = eval_dataset.map(
                 preprocess_function,
                 batched=True,
@@ -814,7 +813,7 @@ def main():
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on dataset",
             )
-            logger.debug(f"Num eval_samples: {len(eval_dataset)}")
+            # logger.debug(f"Num eval_samples: {len(eval_dataset)}")
             eval_dataset = eval_dataset.filter(filter_empty_labels, num_proc=data_args.preprocessing_num_workers)
             logger.debug(f"Num eval_samples: {len(eval_dataset)}")
             logger.debug("Tokenized eval example:")
