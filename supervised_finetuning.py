@@ -750,11 +750,12 @@ def main():
                 # Ignore the user instructions
                 target[cur_len: cur_len + instruction_len] = IGNORE_INDEX
                 cur_len += turn_len
+                logger.info(f"cur_len:{cur_len},turn_len:{turn_len},total_len:{total_len}")
             target[cur_len:] = IGNORE_INDEX
             if cur_len < tokenizer.model_max_length:
                 if cur_len != total_len:
                     target[:] = IGNORE_INDEX
-                    # logger.warning(f"tokenization mismatch: {cur_len} vs. {total_len}. (ignored)")
+                    logger.warning(f"tokenization mismatch: {cur_len} vs. {total_len}. (ignored)")
         return dict(
             input_ids=input_ids,
             labels=targets,
