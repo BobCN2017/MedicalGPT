@@ -4,6 +4,7 @@ supervised_finetuning.py \
     --model_name_or_path THUDM/chatglm2-6b \
     --train_file_dir ./data/finetune/data \
     --validation_file_dir ./data/finetune/valid \
+    --template_name chatglm \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
     --do_train \
