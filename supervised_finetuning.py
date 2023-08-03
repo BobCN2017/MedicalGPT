@@ -741,7 +741,7 @@ def main():
             for i, turn in enumerate(turns):
                 if turn == "":
                     break
-                turn_len = len(tokenizer(turn, add_special_tokens=False).input_ids) + 1  # 1 is </s> token at the end
+                turn_len = len(tokenizer(turn, add_special_tokens=False).input_ids)  # 1 is </s> token at the end
                 parts = turn.split(sep)
                 if len(parts) != 2:
                     break
